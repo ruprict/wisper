@@ -1,32 +1,30 @@
 # Wisper
 
-Simple pub/sub for Ruby objects
+Wisper is a Ruby library for decoupling and managing the dependencies of your
+Ruby objects using Pub/Sub.
 
+[![Gem Version](https://badge.fury.io/rb/wisper.png)](http://badge.fury.io/rb/wisper)
 [![Code Climate](https://codeclimate.com/github/krisleech/wisper.png)](https://codeclimate.com/github/krisleech/wisper)
 [![Build Status](https://travis-ci.org/krisleech/wisper.png?branch=master)](https://travis-ci.org/krisleech/wisper)
+[![Coverage Status](https://coveralls.io/repos/krisleech/wisper/badge.png?branch=master)](https://coveralls.io/r/krisleech/wisper?branch=master)
 
-While this is not dependent on Rails in any way it was extracted from a Rails
-project and can used as an alternative to ActiveRecord callbacks and Observers.
+Wisper was extracted from a Rails codebase but is not dependant on Rails.
 
-The problem with callbacks and Observers is that they always happen. How many
-times have you wanted to do `User.create` without firing off a welcome email?
-
-It is also super useful for integrating web socket notifications, statistics
-and activity streams in to your controller layer without coupling them to your 
-models.
+It is commonly used as an alternative to ActiveRecord callbacks and Observers
+to reduce coupling between data and domain layers.
 
 ## Installation
 
 Add this line to your application's Gemfile:
 
 ```ruby
-gem 'wisper', '~>1.2.0'
+gem 'wisper'
 ```
 
 ## Usage
 
-Any class with the Wisper module included can broadcast events to subscribed
-listeners. Listeners are added, at runtime, to the publishing object.
+Any class with the `Wisper::Publisher` module included can broadcast events 
+to subscribed listeners. Listeners subscribe, at runtime, to the publisher.
 
 ### Publishing
 
@@ -36,24 +34,23 @@ class MyPublisher
 
   def do_something
     # ...
-    publish(:done_something, self)
+    publish(:done_something)
   end
 end
 ```
 
-When the publisher publishes an event it can pass any number of arguments which 
-are passed on to the listeners.
+When a publisher broadcasts an event it can pass any number of arguments which 
+are to be passed on to the listeners.
 
 ```ruby
-publish(:done_something, self, 'hello', 'world')
+publish(:done_something, 'hello', 'world')
 ```
 
 ### Subscribing
 
 #### Listeners
 
-Any object can be a listener and by default they are only subscribed to events
-they can respond to.
+Any object can be a listener and only receives events it can respond to.
 
 ```ruby
 my_publisher = MyPublisher.new
@@ -62,7 +59,7 @@ my_publisher.subscribe(MyListener.new)
 
 #### Blocks
 
-Blocks are subscribed to single events.
+Blocks are subscribed to single events only.
 
 ```ruby
 my_publisher = MyPublisher.new
@@ -130,13 +127,20 @@ responsibility.
 class PlayerJoiningTeam
   include Wisper::Publisher
 
-  def execute(player, team)
+  attr_reader :player, :team
+
+  def initialize(player, team)
+    @player = player
+    @team   = team
+  end
+
+  def execute
     membership = Membership.new(player, team)
 
     if membership.valid?
       membership.save!
-      email_player(player, team)
-      assign_first_mission(player, team)
+      email_player
+      assign_first_mission
       publish(:player_joining_team_successful, player, team)
     else
       publish(:player_joining_team_failed, player, team)
@@ -145,11 +149,11 @@ class PlayerJoiningTeam
 
   private
 
-  def email_player(player, team)
+  def email_player
     # ...
   end
 
-  def assign_first_mission(player, team)
+  def assign_first_mission
     # ...
   end
 end
@@ -195,11 +199,12 @@ end
 ## Global listeners
 
 If you become tired of adding the same listeners to _every_ publisher you can
-add global listeners. They receive all published events which they can respond
+add listeners globally. They receive all broadcast events which they can respond
 to.
 
-However it means that when looking at the code it will not be obvious that the
-global listeners are being executed in additional to the regular listeners.
+Global listeners should be used with caution, the execution path becomes less
+obvious on reading the code and of course you are introducing global state and
+'always on' behaviour. This may not desirable.
 
 ```ruby
 Wisper.add_listener(MyListener.new)
@@ -208,6 +213,24 @@ Wisper.add_listener(MyListener.new)
 In a Rails app you might want to add your global listeners in an initalizer.
 
 Global listeners are threadsafe.
+
+### Scoping to publisher class
+
+You might want to globally subscribe a listener to publishers with a certain
+class.
+
+```ruby
+Wisper.add_listener(MyListener.new, :scope => :MyPublisher)
+```
+
+This will subscribe the listener to all instances of `MyPublisher` and its
+subclasses.
+
+Alternatively you can also do exactly the same with a publisher class:
+
+```ruby
+MyPublisher.add_listener(MyListener.new)
+```
 
 ## Temporary Global Listeners
 
@@ -235,7 +258,20 @@ of events to `:on`.
 post_creater.subscribe(PusherListener.new, :on => :create_post_successful)
 ```
 
-## Mapping event to a different method
+## Prefixing broadcast events
+
+If you would prefer listeners to receive events with a prefix, for example
+`on`, you can do so by passing a string or symbol to `:prefix`.
+
+```ruby
+post_creater.subscribe(PusherListener.new, :prefix => :on)
+```
+
+If `post_creater` where to broadcast the event `post_created` the subscribed
+listeners would receive `on_post_created`. You can also pass `true` which will
+use the default prefix, "on".
+
+## Mapping an event to a different method
 
 By default the method called on the subscriber is the same as the event
 broadcast. However it can be mapped to a different method using `:with`.
@@ -244,9 +280,8 @@ broadcast. However it can be mapped to a different method using `:with`.
 report_creator.subscribe(MailResponder.new, :with => :successful)
 ```
 
-In the above case it is pretty useless unless used in conjuction with `:on`
-since all events will get mapped to `:successful`. Instead you might do
-something like this:
+This is pretty useless unless used in conjuction with `:on`, since all events 
+will get mapped to `:successful`. Instead you might do something like this:
 
 ```ruby
 report_creator.subscribe(MailResponder.new, :on   => :create_report_successful,
@@ -275,8 +310,8 @@ post.on(:success) { |post| redirect_to post }
 
 ## RSpec
 
-Wisper comes with a method for stubbing event publishers so that you can create isolation tests
-that only care about reacting to events.
+Wisper comes with a method for stubbing event publishers so that you can create 
+isolation tests that only care about reacting to events.
 
 Given this piece of code:
 
@@ -328,7 +363,17 @@ See `spec/lib/rspec_extensions_spec.rb` for a runnable example.
 
 Tested with MRI 1.9.x, MRI 2.0.0, JRuby (1.9 and 2.0 mode) and Rubinius (1.9
 mode).
+
 See the [build status](https://travis-ci.org/krisleech/wisper) for details.
+
+## Running Specs
+
+```
+rspec spec
+```
+
+There is both a `Rakefile` and `Guardfile`, if you like you prefer to run the
+specs using `guard-rspec` or `rake`.
 
 ## License
 

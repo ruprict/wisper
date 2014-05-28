@@ -2,9 +2,10 @@ source 'https://rubygems.org'
 
 gemspec
 
-group :development do
-  gem 'guard'
-  gem 'guard-rspec'
-  gem 'rb-fsevent', '~>0.9.1' if RUBY_PLATFORM =~ /darwin/
+gem 'rubysl', '~> 2.0', :platforms => :rbx
+
+gem 'coveralls', require: false
+
+group :metrics do
   gem 'flay'
 end

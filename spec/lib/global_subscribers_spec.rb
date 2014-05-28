@@ -12,6 +12,15 @@ describe Wisper::GlobalListeners do
       publisher.send(:broadcast, :it_happened)
     end
 
+    it 'works with options' do
+      Wisper::GlobalListeners.add(global_listener, :on => :it_happened,
+                                                   :with => :woot)
+      global_listener.should_receive(:woot).once
+      global_listener.should_not_receive(:it_happened_again)
+      publisher.send(:broadcast, :it_happened)
+      publisher.send(:broadcast, :it_happened_again)
+    end
+
     it 'works along side local listeners' do
       # global listener
       Wisper::GlobalListeners.add(global_listener)
@@ -23,6 +32,23 @@ describe Wisper::GlobalListeners do
       local_listener.should_receive(:it_happened)
 
       publisher.send(:broadcast, :it_happened)
+    end
+
+    it 'can be scoped to classes' do
+      publisher_1 = publisher_class.new
+      publisher_2 = publisher_class.new
+      publisher_3 = publisher_class.new
+
+      Wisper::GlobalListeners.add(global_listener, :scope => [publisher_1.class,
+                                                              publisher_2.class])
+
+      global_listener.should_receive(:it_happened_1).once
+      global_listener.should_receive(:it_happened_2).once
+      global_listener.should_not_receive(:it_happened_3)
+
+      publisher_1.send(:broadcast, :it_happened_1)
+      publisher_2.send(:broadcast, :it_happened_2)
+      publisher_3.send(:broadcast, :it_happened_3)
     end
 
     it 'is threadsafe' do
@@ -45,7 +71,7 @@ describe Wisper::GlobalListeners do
     end
 
     it 'returns an immutable collection' do
-      Wisper::GlobalListeners.listeners.frozen?.should be_true
+      Wisper::GlobalListeners.listeners.should be_frozen
       expect { Wisper::GlobalListeners.listeners << global_listener }.to raise_error(RuntimeError)
     end
   end
